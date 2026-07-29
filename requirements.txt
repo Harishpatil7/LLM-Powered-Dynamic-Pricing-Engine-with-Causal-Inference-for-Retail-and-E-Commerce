@@ -1,41 +1,18 @@
-# Web Framework
-fastapi
-uvicorn
-
-# Database
-sqlalchemy
-pymysql
-alembic
-
-# Auth
-python-jose
-passlib
-bcrypt
-python-dotenv
-
-# ML / Causal
-dowhy
-econml
-causalml
-xgboost
-scikit-learn
-pandas
-numpy
-lightgbm
-
-# LLM / RAG
-langchain
-langchain-openai
-faiss-cpu
-openai
-anthropic
-
-# Optimization
-scikit-optimize
-
-# Utilities
-pydantic
-httpx
-pytest
-
-# To be added as needed...
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic-settings==2.7.1
+sqlalchemy==2.0.36
+pandas==2.2.3
+numpy==2.2.1
+scikit-learn==1.6.0
+econml==0.16.0
+dowhy==0.14.0
+scikit-optimize==0.10.2
+python-dotenv==1.0.1
+pytest==8.3.4
+httpx==0.28.1
+python-multipart==0.0.20
+google-genai>=1.0.0
+langchain>=0.3.0
+langchain-community>=0.3.0
+langchain-google-genai>=2.0.0

@@ -1,46 +1,20 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-.Python
-*.egg
-*.egg-info/
-dist/
-build/
-.eggs/
 .venv/
-venv/
-env/
+.pytest_cache/
 
-# Environment variables
+# Secrets and local state
 .env
-.env.local
-.env.production
-
-# Node / React
-node_modules/
-dist/
-.ds_store
-*.log
-frontend/.env
-
-# Jupyter Notebooks
-.ipynb_checkpoints/
-notebooks/.ipynb_checkpoints/
-
-# Database
 *.db
 *.sqlite3
+*.log
 
-# IDE
-.vscode/
-.idea/
-*.swp
+# Generated data and model artefacts
+data/processed/
+data/artifacts/
+data/uploads/
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Docker
-*.override.yml
+# Frontend
+frontend/node_modules/
+frontend/dist/
