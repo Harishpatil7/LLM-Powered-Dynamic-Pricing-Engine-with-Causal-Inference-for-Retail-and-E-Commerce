@@ -554,7 +554,3 @@ For enterprise production deployments, the following architectural upgrades are 
 5. **Continuous Backtesting & Guardrails**: Add automated backtesting against historical holds-out to evaluate realized price elasticity vs. estimated marginal effects.
 
 ---
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
