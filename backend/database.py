@@ -35,8 +35,9 @@ def resolved_database_url(database_url: str) -> str:
     if database_url.startswith("mysql"):
         try:
             url = make_url(database_url)
-            # TiDB Cloud and MySQL require a target database (default: 'test')
-            if not url.database or url.database.strip() in ("", "/"):
+            system_dbs = {"", "/", "sys", "mysql", "information_schema", "performance_schema"}
+            # TiDB Cloud and MySQL require a target user database ('test'). System schemas disallow user tables.
+            if not url.database or url.database.strip().lower() in system_dbs:
                 url = url.set(database="test")
                 database_url = url.render_as_string(hide_password=False)
         except Exception:
