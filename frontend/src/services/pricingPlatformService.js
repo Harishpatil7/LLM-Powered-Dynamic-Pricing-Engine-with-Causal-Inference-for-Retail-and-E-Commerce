@@ -1,10 +1,13 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const rawBaseUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').trim();
+// Automatically sanitize: remove any trailing slashes and redundant /api/v1 suffix
+const API_BASE_URL = rawBaseUrl.replace(/\/+$/, '').replace(/\/api\/v1$/, '');
 
 async function jsonRequest(path, options = {}) {
   const token = localStorage.getItem('dpeci_token');
   const headers = new Headers(options.headers || {});
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const response = await fetch(`${API_BASE_URL}${cleanPath}`, { ...options, headers });
   const contentType = response.headers.get('content-type') || '';
   const payload = contentType.includes('application/json') ? await response.json() : await response.text();
   if (!response.ok) throw new Error(typeof payload === 'string' ? payload : payload?.detail || 'Request failed');

@@ -14,6 +14,28 @@ from backend.api.routes.auth import router as auth_router
 from backend.database import init_database
 
 
+import re
+from starlette.types import ASGIApp, Receive, Scope, Send
+
+
+class NormalizePathMiddleware:
+    """Normalize redundant slashes (e.g. //api/v1 -> /api/v1) before route resolution."""
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope["type"] in ("http", "websocket"):
+            path = scope.get("path", "")
+            if "//" in path:
+                clean_path = re.sub(r"/+", "/", path)
+                scope = dict(scope)
+                scope["path"] = clean_path
+                if "raw_path" in scope:
+                    scope["raw_path"] = clean_path.encode("latin-1")
+        await self.app(scope, receive, send)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_database()
@@ -27,6 +49,8 @@ app = FastAPI(
     openapi_url=f"{settings.api_prefix}/openapi.json",
     lifespan=lifespan,
 )
+
+app.add_middleware(NormalizePathMiddleware)
 
 # The Vite development server is allowed during local development. Production
 # origins will be configured explicitly before deployment.
