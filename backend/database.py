@@ -5,21 +5,33 @@ from __future__ import annotations
 from collections.abc import Generator
 from pathlib import Path
 
+import pymysql
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from backend.config import PROJECT_ROOT, settings
 
+# Enable pure-python PyMySQL driver as default MySQLdb drop-in
+try:
+    pymysql.install_as_MySQLdb()
+except Exception:
+    pass
+
 
 def resolved_database_url(database_url: str) -> str:
-    """Make the default relative SQLite URL stable regardless of the launch CWD."""
+    """Normalize database URL for production and local environments."""
+
+    # Automatically map generic mysql:// to pure-python mysql+pymysql://
+    if database_url.startswith("mysql://"):
+        database_url = "mysql+pymysql://" + database_url.removeprefix("mysql://")
 
     prefix = "sqlite:///./"
     if database_url.startswith(prefix):
         relative_path = database_url.removeprefix(prefix)
         return f"sqlite:///{(PROJECT_ROOT / relative_path).as_posix()}"
     return database_url
+
 
 
 def build_engine(database_url: str) -> Engine:
