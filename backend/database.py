@@ -72,6 +72,14 @@ DATABASE_URL = resolved_database_url(settings.database_url)
 if DATABASE_URL.startswith("sqlite:///"):
     database_path = DATABASE_URL[len("sqlite:///"):]
     Path(database_path).parent.mkdir(parents=True, exist_ok=True)
+else:
+    try:
+        from sqlalchemy.engine import make_url
+
+        _u = make_url(DATABASE_URL)
+        print(f"INFO: [Database] Connecting to {_u.drivername} at {_u.host}:{_u.port}/{_u.database} (user: {_u.username})")
+    except Exception:
+        pass
 
 engine = build_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
@@ -114,6 +122,22 @@ def init_database() -> None:
     # Import models before metadata creation so all tables are registered.
     import backend.models  # noqa: F401
 
-    Base.metadata.create_all(bind=engine)
-    _migrate_missing_columns(engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+        _migrate_missing_columns(engine)
+    except Exception as exc:
+        err_msg = str(exc)
+        if "1142" in err_msg or "denied to user" in err_msg:
+            print("\n" + "=" * 80)
+            print("⚠️ [DATABASE PERMISSION DENIED IN TIDB / MYSQL]")
+            print(f"Details: {exc}")
+            print("\n👉 HOW TO FIX IN TIDB CLOUD:")
+            print("1. Log in to TiDB Cloud (https://tidbcloud.com)")
+            print("2. Click your Cluster -> 'SQL Editor' in the left menu")
+            print("3. Run the following command:")
+            print("   GRANT ALL PRIVILEGES ON *.* TO '3ivhXSazAyWvNw8.root'@'%';")
+            print("   GRANT ALL PRIVILEGES ON test.* TO '3ivhXSazAyWvNw8.root'@'%';")
+            print("   FLUSH PRIVILEGES;")
+            print("=" * 80 + "\n")
+        raise exc
 
