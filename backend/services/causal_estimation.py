@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 from dowhy import CausalModel
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.exceptions import DataConversionWarning
+
+# Suppress sklearn 1D array column-vector conversion warnings during EconML cross-validation
+warnings.filterwarnings("ignore", category=DataConversionWarning)
 
 
 @dataclass

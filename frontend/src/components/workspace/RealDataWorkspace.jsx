@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, ArrowLeft, CheckCircle2, Database, FileUp, Play, ShieldCheck, TrendingUp } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Database, FileUp, Loader2, Play, ShieldAlert, ShieldCheck, TrendingUp } from 'lucide-react';
 import EvidenceReportPanel from './EvidenceReportPanel';
 import {
+  applyRecommendation,
   createRecommendation,
   createRetailer,
   generateGeminiReport,
+  getCausalRunStatus,
   getDatasets,
   getProducts,
   getRetailers,
@@ -31,7 +33,10 @@ export default function RealDataWorkspace({ onBack, user }) {
   const [report, setReport] = useState(null);
   const [question, setQuestion] = useState('Explain the verified pricing evidence and whether a recommendation is safe.');
   const [message, setMessage] = useState('Create a retailer workspace, then upload an authorised historical-sales CSV.');
-  const [busy, setBusy] = useState(false);
+  const [activeAction, setActiveAction] = useState(null);
+
+  const isBusy = Boolean(activeAction);
+  const isAction = (actionKey) => activeAction === actionKey;
 
   async function refreshProducts(id = retailerId) {
     const items = await getProducts(id);
@@ -73,20 +78,20 @@ export default function RealDataWorkspace({ onBack, user }) {
     return () => { active = false; };
   }, [retailerId]);
 
-  async function runWork(action) {
-    setBusy(true);
+  async function runWork(actionKey, action) {
+    setActiveAction(actionKey);
     try {
       await action();
     } catch (error) {
       setMessage(error.message);
     } finally {
-      setBusy(false);
+      setActiveAction(null);
     }
   }
 
   function handleCreate(event) {
     event.preventDefault();
-    runWork(async () => {
+    runWork('create_retailer', async () => {
       const retailer = await createRetailer(retailerName);
       localStorage.setItem('dpeci_retailer_id', retailer.id);
       localStorage.setItem('dpeci_retailer_name', retailer.name);
@@ -102,7 +107,7 @@ export default function RealDataWorkspace({ onBack, user }) {
   function handleUpload(event) {
     event.preventDefault();
     if (!file) return;
-    runWork(async () => {
+    runWork('upload_dataset', async () => {
       const result = await uploadDataset(retailerId, file);
       await Promise.all([refreshProducts(), refreshDatasets()]);
       setAnalysis(null);
@@ -115,7 +120,7 @@ export default function RealDataWorkspace({ onBack, user }) {
 
   function handleValidate() {
     if (!file) return;
-    runWork(async () => {
+    runWork('validate_file', async () => {
       const result = await validateDataset(file);
       setValidation(result);
       setMessage(result.status === 'valid' ? 'Validation passed. You can now store this dataset.' : 'Validation found errors. Correct the CSV before storing it.');
@@ -123,16 +128,36 @@ export default function RealDataWorkspace({ onBack, user }) {
   }
 
   function handleAnalysis() {
-    runWork(async () => {
-      const result = await runCausalAnalysis(retailerId, selected.id);
+    runWork('run_analysis', async () => {
+      let result = await runCausalAnalysis(retailerId, selected.id, true);
       setAnalysis(result);
       setRecommendation(null);
-      setMessage(result.status === 'blocked' ? result.limitations.join(' ') : 'Causal analysis completed.');
+
+      if (result.status === 'queued' || result.status === 'running') {
+        setMessage(`Causal analysis ${result.status} in background...`);
+        for (let i = 0; i < 60; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          result = await getCausalRunStatus(retailerId, selected.id, result.model_run_id);
+          setAnalysis(result);
+          if (result.status === 'completed' || result.status === 'blocked' || result.status === 'failed') {
+            break;
+          }
+          if (result.progress_step) {
+            setMessage(`Causal analysis: ${result.progress_step}...`);
+          }
+        }
+      }
+
+      setMessage(result.status === 'blocked' 
+        ? (result.limitations?.join(' ') || 'Causal analysis blocked.') 
+        : result.status === 'failed' 
+        ? 'Causal analysis encountered an execution failure.' 
+        : 'Causal analysis completed successfully.');
     });
   }
 
   function handleOptimisation() {
-    runWork(async () => {
+    runWork('optimize_price', async () => {
       const result = await createRecommendation(retailerId, selected.id, analysis.model_run_id, {
         minimum_margin: Number(constraints.minimum_margin) / 100,
         maximum_price_increase: Number(constraints.maximum_price_increase) / 100,
@@ -143,8 +168,18 @@ export default function RealDataWorkspace({ onBack, user }) {
     });
   }
 
+  function handleApplyRecommendation() {
+    if (!recommendation) return;
+    runWork('apply_price', async () => {
+      const result = await applyRecommendation(retailerId, selected.id, recommendation.id);
+      setRecommendation(result);
+      await refreshProducts();
+      setMessage(`Price of ${money(result.recommended_price)} successfully applied to catalog for ${selected.external_id}!`);
+    });
+  }
+
   function handleReportPreview() {
-    runWork(async () => {
+    runWork('preview_report', async () => {
       const result = await previewReport(retailerId, selected.id, question);
       setReport(result);
       setMessage('Grounded evidence preview generated. No LLM provider has been used.');
@@ -152,15 +187,21 @@ export default function RealDataWorkspace({ onBack, user }) {
   }
 
   function handleGeminiReport() {
-    runWork(async () => {
+    runWork('gemini_report', async () => {
       const result = await generateGeminiReport(retailerId, selected.id, question);
       setReport(result);
-      setMessage('Gemini generated a report from retrieved verified evidence.');
+      setMessage(result.report_type === 'gemini_grounded_report' 
+        ? 'Gemini generated a report from retrieved verified evidence.' 
+        : 'Grounded report generated from verified evidence (deterministic audit fallback applied).');
     });
   }
 
+  const isCalculating = analysis?.status === 'queued' || analysis?.status === 'running';
+  const isCompleted = analysis?.status === 'completed';
+  const isBlocked = analysis?.status === 'blocked';
+  const isFailed = analysis?.status === 'failed';
   const diagnosticsPassed = Boolean(analysis?.diagnostics?.length) && analysis.diagnostics.every((check) => check.passed);
-  const analysisSafe = analysis?.status === 'completed' && diagnosticsPassed && Number(analysis.ci_upper) < 0;
+  const analysisSafe = isCompleted && diagnosticsPassed && Number(analysis.ci_upper) < 0;
 
   return (
     <main className="app-container" style={{ paddingTop: 72, paddingBottom: 72, position: 'relative', zIndex: 1 }}>
@@ -183,7 +224,11 @@ export default function RealDataWorkspace({ onBack, user }) {
           <Database className="h-5 w-5 text-sky-400" />
           <h2 style={{ marginTop: 14, fontSize: 18 }}>Create retailer workspace</h2>
           <input className="chat-input" value={retailerName} onChange={(event) => setRetailerName(event.target.value)} placeholder="Business name" required style={{ marginTop: 18, width: '100%' }} />
-          <button className="apple-button" disabled={busy} style={{ marginTop: 14 }}>{busy ? 'Creating…' : 'Create workspace'}</button>
+          <button className="apple-button" disabled={isBusy} style={{ marginTop: 14 }}>
+            {isAction('create_retailer') && <Loader2 className="h-4 w-4 animate-spin" />}
+            {' '}
+            {isAction('create_retailer') ? 'Creating…' : 'Create workspace'}
+          </button>
         </form>
       ) : (
         <>
@@ -199,8 +244,16 @@ export default function RealDataWorkspace({ onBack, user }) {
             <h2 style={{ marginTop: 10, fontSize: 18 }}>Upload historical sales CSV</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginTop: 6 }}>Required: date, product_id, price, units_sold, unit_cost.</p>
             <input type="file" accept=".csv,text/csv" onChange={(event) => { setFile(event.target.files?.[0] || null); setValidation(null); }} style={{ marginTop: 14 }} />
-            <button type="button" className="apple-button secondary" onClick={handleValidate} disabled={!file || busy} style={{ marginLeft: 12 }}>{busy ? 'Working…' : 'Validate file'}</button>
-            <button className="apple-button" disabled={validation?.status !== 'valid' || busy} style={{ marginLeft: 8 }}>{busy ? 'Storing…' : 'Store validated data'}</button>
+            <button type="button" className="apple-button secondary" onClick={handleValidate} disabled={!file || isBusy} style={{ marginLeft: 12 }}>
+              {isAction('validate_file') && <Loader2 className="h-4 w-4 animate-spin" />}
+              {' '}
+              {isAction('validate_file') ? 'Validating…' : 'Validate file'}
+            </button>
+            <button className="apple-button" disabled={validation?.status !== 'valid' || isBusy} style={{ marginLeft: 8 }}>
+              {isAction('upload_dataset') && <Loader2 className="h-4 w-4 animate-spin" />}
+              {' '}
+              {isAction('upload_dataset') ? 'Storing…' : 'Store validated data'}
+            </button>
             {validation && <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--border-color)', display: 'grid', gap: 8 }}>
               <p style={{ color: validation.status === 'valid' ? 'var(--accent-emerald)' : 'var(--accent-orange)', fontSize: 13 }}>
                 {validation.status === 'valid' ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />} {validation.status.toUpperCase()} · {validation.valid_rows}/{validation.total_rows} usable rows · {validation.product_count} products · {validation.eligible_product_count} analysis-eligible
@@ -235,36 +288,147 @@ export default function RealDataWorkspace({ onBack, user }) {
                 <span className="telemetry-label">CAUSAL DECISION WORKBENCH</span>
                 <h2 style={{ marginTop: 10, fontSize: 20 }}>{selected?.name || selected?.external_id}</h2>
                 <p style={{ color: 'var(--text-secondary)', marginTop: 8 }}>Latest observed price {money(selected?.latest_price)} · unit cost {money(selected?.latest_unit_cost)} · demand {selected?.latest_demand ?? '—'} units</p>
-                <button className="apple-button" onClick={handleAnalysis} disabled={busy || !selected} style={{ marginTop: 20 }}><Play className="h-4 w-4" /> {busy ? 'Running analysis…' : 'Run causal analysis'}</button>
+                
+                <button className="apple-button" onClick={handleAnalysis} disabled={isBusy || !selected} style={{ marginTop: 20 }}>
+                  {isAction('run_analysis') ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                  {' '}
+                  {isAction('run_analysis') ? 'Calculating price effect…' : 'Run causal analysis'}
+                </button>
 
-                {analysis && (
-                  <div style={{ marginTop: 20, fontSize: 13 }}>
-                    <div style={{ padding: 14, borderRadius: 10, background: analysisSafe ? 'rgba(16,185,129,.10)' : 'rgba(249,115,22,.10)', border: `1px solid ${analysisSafe ? 'rgba(16,185,129,.35)' : 'rgba(249,115,22,.35)'}` }}>
-                      <ShieldCheck className={`h-4 w-4 ${analysisSafe ? 'text-emerald-400' : 'text-orange-400'}`} />
-                      <strong style={{ marginLeft: 8 }}>{analysisSafe ? 'SAFE TO OPTIMIZE' : 'OPTIMIZATION BLOCKED'}</strong>
-                      <p style={{ color: 'var(--text-secondary)', marginTop: 6 }}>{analysisSafe ? 'The estimated effect is negative with all robustness checks passed.' : analysis.limitations?.join(' ') || 'One or more robustness checks did not pass.'}</p>
+                {/* 1. MODEL CALCULATING STATE */}
+                {isCalculating && (
+                  <div style={{ marginTop: 20, padding: 18, borderRadius: 12, border: '1px solid rgba(14, 165, 233, 0.4)', position: 'relative', overflow: 'hidden' }} className="shimmer-card">
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <Loader2 className="h-5 w-5 text-sky-400 animate-spin" />
+                        <strong style={{ color: '#38bdf8', fontSize: 13, letterSpacing: '0.05em' }}>
+                          MODEL IS CALCULATING PRICE EFFECT
+                        </strong>
+                      </div>
+                      <span className="pulsing-indicator" />
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginTop: 14 }}>
-                      <div className="product-pill" style={{ padding: 10 }}><span className="telemetry-label">PRICE EFFECT</span><strong style={{ display: 'block', marginTop: 5 }}>{analysis.effect == null ? '—' : Number(analysis.effect).toFixed(3)}</strong><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>units / price unit</span></div>
-                      <div className="product-pill" style={{ padding: 10 }}><span className="telemetry-label">95% INTERVAL</span><strong style={{ display: 'block', marginTop: 5 }}>{analysis.ci_lower == null ? '—' : `${Number(analysis.ci_lower).toFixed(2)} to ${Number(analysis.ci_upper).toFixed(2)}`}</strong><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>must stay below zero</span></div>
-                      <div className="product-pill" style={{ padding: 10 }}><span className="telemetry-label">OBSERVATIONS</span><strong style={{ display: 'block', marginTop: 5 }}>{analysis.observations}</strong><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>records used</span></div>
+
+                    <p style={{ color: 'var(--text-primary)', marginTop: 10, fontSize: 13, fontWeight: 500 }}>
+                      Double Machine Learning (LinearDML) is training across 3 cross-validation folds and running 3 DoWhy refuters.
+                    </p>
+                    <p style={{ color: 'var(--text-secondary)', marginTop: 6, fontSize: 12 }}>
+                      Live pipeline status: <span style={{ color: '#e0f2fe', fontWeight: 600 }}>{analysis.progress_step || 'Fitting cross-validation folds...'}</span>
+                    </p>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 16 }}>
+                      <div className="product-pill" style={{ padding: '8px 10px', textAlign: 'center', borderColor: 'rgba(56, 189, 248, 0.4)', background: 'rgba(56, 189, 248, 0.1)' }}>
+                        <span style={{ fontSize: 10, color: '#38bdf8', fontWeight: 600 }}>STAGE 1</span>
+                        <p style={{ fontSize: 11, marginTop: 2, color: '#f8fafc' }}>Confounder Panel</p>
+                      </div>
+                      <div className="product-pill" style={{ padding: '8px 10px', textAlign: 'center', borderColor: 'rgba(56, 189, 248, 0.5)', background: 'rgba(56, 189, 248, 0.2)' }}>
+                        <span style={{ fontSize: 10, color: '#38bdf8', fontWeight: 600 }}>STAGE 2</span>
+                        <p style={{ fontSize: 11, marginTop: 2, color: '#f8fafc' }}>Double ML Folds</p>
+                      </div>
+                      <div className="product-pill" style={{ padding: '8px 10px', textAlign: 'center', borderColor: 'rgba(56, 189, 248, 0.4)', background: 'rgba(56, 189, 248, 0.1)' }}>
+                        <span style={{ fontSize: 10, color: '#38bdf8', fontWeight: 600 }}>STAGE 3</span>
+                        <p style={{ fontSize: 11, marginTop: 2, color: '#f8fafc' }}>3 Refuter Checks</p>
+                      </div>
                     </div>
-                    <div style={{ marginTop: 18 }}><span className="telemetry-label">ROBUSTNESS CHECKS</span>{analysis.diagnostics?.map((check) => <div key={check.name} style={{ marginTop: 8, padding: 10, borderLeft: `3px solid ${check.passed ? 'var(--accent-emerald)' : 'var(--accent-orange)'}`, background: 'rgba(255,255,255,.025)' }}><strong style={{ color: check.passed ? 'var(--accent-emerald)' : 'var(--accent-orange)', fontSize: 12 }}>{check.passed ? 'PASS' : 'BLOCKED'} · {check.name.replaceAll('_', ' ')}</strong><p style={{ color: 'var(--text-secondary)', marginTop: 4 }}>{check.message}</p></div>)}</div>
-                    {analysisSafe && <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border-color)' }}>
-                      <span className="telemetry-label">PRICE GUARDRAILS</span>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginTop: 10 }}>{[['minimum_margin', 'Minimum margin'], ['maximum_price_increase', 'Max increase'], ['maximum_price_decrease', 'Max decrease']].map(([key, label]) => <label key={key} style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{label}<input className="chat-input" style={{ width: '100%', marginTop: 5 }} type="number" min="0" max="99" value={constraints[key]} onChange={(event) => setConstraints((current) => ({ ...current, [key]: event.target.value }))} /><span style={{ fontSize: 10 }}>%</span></label>)}</div>
-                      <button className="apple-button" onClick={handleOptimisation} disabled={busy} style={{ marginTop: 14 }}><TrendingUp className="h-4 w-4" /> Optimize within guardrails</button>
-                    </div>}
                   </div>
                 )}
 
+                {/* 2. COMPLETED / BLOCKED / FAILED STATE */}
+                {!isCalculating && analysis && (
+                  <div style={{ marginTop: 20, fontSize: 13 }}>
+                    <div style={{ padding: 14, borderRadius: 10, background: analysisSafe ? 'rgba(16,185,129,.10)' : 'rgba(249,115,22,.10)', border: `1px solid ${analysisSafe ? 'rgba(16,185,129,.35)' : 'rgba(249,115,22,.35)'}` }}>
+                      {analysisSafe ? <ShieldCheck className="h-4 w-4 text-emerald-400" /> : <ShieldAlert className="h-4 w-4 text-orange-400" />}
+                      <strong style={{ marginLeft: 8 }}>{analysisSafe ? 'SAFE TO OPTIMIZE' : 'OPTIMIZATION BLOCKED'}</strong>
+                      <p style={{ color: 'var(--text-secondary)', marginTop: 6 }}>
+                        {analysisSafe 
+                          ? 'The estimated causal effect is negative with all robustness checks passed.' 
+                          : isBlocked 
+                          ? (analysis.limitations?.join(' ') || 'Observations are insufficient for causal estimation.') 
+                          : isFailed
+                          ? (analysis.limitations?.join(' ') || 'Execution error encountered during causal training.')
+                          : (analysis.limitations?.join(' ') || 'One or more robustness checks did not pass.')}
+                      </p>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginTop: 14 }}>
+                      <div className="product-pill" style={{ padding: 10 }}>
+                        <span className="telemetry-label">PRICE EFFECT</span>
+                        <strong style={{ display: 'block', marginTop: 5 }}>{analysis.effect == null ? '—' : Number(analysis.effect).toFixed(3)}</strong>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>units / price unit</span>
+                      </div>
+                      <div className="product-pill" style={{ padding: 10 }}>
+                        <span className="telemetry-label">95% INTERVAL</span>
+                        <strong style={{ display: 'block', marginTop: 5 }}>{analysis.ci_lower == null ? '—' : `${Number(analysis.ci_lower).toFixed(2)} to ${Number(analysis.ci_upper).toFixed(2)}`}</strong>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>must stay below zero</span>
+                      </div>
+                      <div className="product-pill" style={{ padding: 10 }}>
+                        <span className="telemetry-label">OBSERVATIONS</span>
+                        <strong style={{ display: 'block', marginTop: 5 }}>{analysis.observations}</strong>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>records used</span>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 18 }}>
+                      <span className="telemetry-label">ROBUSTNESS CHECKS</span>
+                      {analysis.diagnostics?.map((check) => (
+                        <div key={check.name} style={{ marginTop: 8, padding: 10, borderLeft: `3px solid ${check.passed ? 'var(--accent-emerald)' : 'var(--accent-orange)'}`, background: 'rgba(255,255,255,.025)' }}>
+                          <strong style={{ color: check.passed ? 'var(--accent-emerald)' : 'var(--accent-orange)', fontSize: 12 }}>
+                            {check.passed ? 'PASS' : 'BLOCKED'} · {check.name.replaceAll('_', ' ')}
+                          </strong>
+                          <p style={{ color: 'var(--text-secondary)', marginTop: 4 }}>{check.message}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {analysisSafe && (
+                      <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border-color)' }}>
+                        <span className="telemetry-label">PRICE GUARDRAILS</span>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginTop: 10 }}>
+                          {[['minimum_margin', 'Minimum margin'], ['maximum_price_increase', 'Max increase'], ['maximum_price_decrease', 'Max decrease']].map(([key, label]) => (
+                            <label key={key} style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                              {label}
+                              <input className="chat-input" style={{ width: '100%', marginTop: 5 }} type="number" min="0" max="99" value={constraints[key]} onChange={(event) => setConstraints((current) => ({ ...current, [key]: event.target.value }))} />
+                              <span style={{ fontSize: 10 }}>%</span>
+                            </label>
+                          ))}
+                        </div>
+                        <button className="apple-button" onClick={handleOptimisation} disabled={isBusy} style={{ marginTop: 14 }}>
+                          {isAction('optimize_price') ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
+                          {' '}
+                          {isAction('optimize_price') ? 'Optimizing…' : 'Optimize within guardrails'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 3. RECOMMENDATION DEPLOYMENT */}
                 {recommendation && (
                   <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border-color)' }}>
-                    <span className="telemetry-label">RECOMMENDATION</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="telemetry-label">RECOMMENDATION</span>
+                      {recommendation.is_applied && (
+                        <span style={{ fontSize: 11, color: 'var(--accent-emerald)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <CheckCircle2 className="h-3.5 w-3.5" /> DEPLOYED TO CATALOG
+                        </span>
+                      )}
+                    </div>
                     <p style={{ fontSize: 25, marginTop: 6, color: 'var(--accent-emerald)' }}>{money(recommendation.recommended_price)}</p>
                     <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Expected profit: {money(recommendation.expected_profit)}</p>
                     <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginTop: 4 }}>Expected demand: {Number(recommendation.expected_demand).toFixed(1)} units</p>
                     <p style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 8 }}>Based on the selected causal run and the guardrails shown above.</p>
+
+                    {!recommendation.is_applied && (
+                      <button 
+                        className="apple-button" 
+                        onClick={handleApplyRecommendation} 
+                        disabled={isBusy} 
+                        style={{ marginTop: 12, background: 'linear-gradient(135deg, #10b981, #059669)' }}
+                      >
+                        {isAction('apply_price') ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                        {' '}
+                        {isAction('apply_price') ? 'Applying to catalog…' : 'Apply Price to Catalog'}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -278,10 +442,12 @@ export default function RealDataWorkspace({ onBack, user }) {
             onPreview={handleReportPreview}
             onGenerate={handleGeminiReport}
             report={report}
-            busy={busy}
+            isBusy={isBusy}
+            actionLoading={activeAction}
           />
         </>
       )}
     </main>
   );
 }
+

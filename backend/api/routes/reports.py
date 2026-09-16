@@ -44,13 +44,21 @@ def generate_report(retailer_id: str, product_id: str, payload: ReportPreviewReq
         raise HTTPException(status_code=404, detail="Retailer or product not found.")
     evidence = retrieve_evidence(db, retailer_id=retailer.id, product_id=product.id, question=payload.question)
     if not evidence:
-        raise HTTPException(status_code=409, detail="No verified evidence exists for this product yet.")
+        raise HTTPException(status_code=409, detail="No verified evidence exists for this product yet. Please run causal analysis first.")
+    
+    report_type = "gemini_grounded_report"
     try:
         answer = generate_gemini_report(payload.question, evidence)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        preview_answer, preview_warning = build_grounded_preview(evidence)
+        fallback_notice = f"[Notice: Live Gemini generation unavailable ({exc}). Displaying verified deterministic evidence below.]\n\n"
+        answer = f"{fallback_notice}{preview_answer}"
+        if preview_warning:
+            answer += f"\n\nLimitations: {preview_warning}"
+        report_type = "deterministic_audit_fallback"
+
     return GeminiReport(
-        report_type="gemini_grounded_report",
+        report_type=report_type,
         answer=answer,
         sources=[EvidenceSourceRead(
             id=item.document.id,

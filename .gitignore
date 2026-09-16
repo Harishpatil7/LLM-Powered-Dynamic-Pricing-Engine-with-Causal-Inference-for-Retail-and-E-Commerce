@@ -18,3 +18,7 @@ data/uploads/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+
+# IDE
+.vscode/
+

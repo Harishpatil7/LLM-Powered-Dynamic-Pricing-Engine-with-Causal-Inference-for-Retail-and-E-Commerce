@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
     database_url: str = "sqlite:///./data/app.db"
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-3.5-flash"
+    gemini_model: str = "gemini-2.0-flash"
     # Replace this value before deploying. It intentionally lets the local
     # development workspace run without asking students to generate a secret.
     auth_secret_key: str = "local-development-only-change-before-deployment"

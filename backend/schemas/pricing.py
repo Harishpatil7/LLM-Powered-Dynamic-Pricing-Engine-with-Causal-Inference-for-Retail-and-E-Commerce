@@ -25,4 +25,7 @@ class RecommendationRead(BaseModel):
     elasticity_ci_upper: float | None
     rationale: str | None
     constraints_applied: dict
+    is_applied: bool = False
+    applied_at: datetime | None = None
     created_at: datetime
+

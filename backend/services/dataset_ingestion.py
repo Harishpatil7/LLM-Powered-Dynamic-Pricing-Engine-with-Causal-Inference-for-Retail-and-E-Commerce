@@ -15,7 +15,7 @@ from backend.schemas.datasets import DatasetColumnMapping
 from backend.services.dataset_validation import OPTIONAL_FIELDS, ValidatedDataset, prepare_dataset_csv
 
 
-UPLOAD_ROOT = PROJECT_ROOT / "data" / "uploads"
+from backend.services.storage import compute_sha256, get_storage_provider
 
 
 def _json_value(value: Any) -> Any:
@@ -43,9 +43,13 @@ def persist_validated_dataset(
     if prepared.report.status != "valid" or prepared.frame is None:
         raise ValueError("Only valid datasets can be persisted.")
 
+    content_hash = compute_sha256(content)
+    storage = get_storage_provider()
+
     dataset = DatasetUpload(
         retailer_id=retailer.id,
         source_filename=filename,
+        file_hash=content_hash,
         mapping=mapping.model_dump(exclude_none=True),
         quality_report=prepared.report.model_dump(mode="json"),
         status="ingested",
@@ -55,16 +59,9 @@ def persist_validated_dataset(
     db.add(dataset)
     db.flush()
 
-    destination = UPLOAD_ROOT / retailer.id
-    destination.mkdir(parents=True, exist_ok=True)
-    raw_file = destination / f"{dataset.id}.csv"
-    raw_file.write_bytes(content)
-    try:
-        dataset.storage_path = str(raw_file.relative_to(PROJECT_ROOT))
-    except ValueError:
-        # External object stores or isolated test directories may live outside
-        # the repository; retain their absolute path in that case.
-        dataset.storage_path = str(raw_file)
+    destination_rel = f"{retailer.id}/{dataset.id}.csv"
+    saved_path = storage.save(content, destination_rel)
+    dataset.storage_path = saved_path
 
     frame = prepared.frame
     products_by_external_id: dict[str, Product] = {}

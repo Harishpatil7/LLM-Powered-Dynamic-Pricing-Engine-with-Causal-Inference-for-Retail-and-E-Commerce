@@ -13,9 +13,10 @@ class DiagnosticRead(BaseModel):
 
 class CausalRunRead(BaseModel):
     model_run_id: str
-    status: Literal["completed", "blocked"]
+    status: Literal["queued", "running", "completed", "blocked", "failed"]
     product_id: str
     observations: int
+    progress_step: str | None = None
     effect: float | None = None
     ci_lower: float | None = None
     ci_upper: float | None = None

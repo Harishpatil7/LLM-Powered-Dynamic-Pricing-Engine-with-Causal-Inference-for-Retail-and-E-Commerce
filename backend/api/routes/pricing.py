@@ -104,3 +104,73 @@ def create_recommendation(
     db.commit()
     db.refresh(recommendation)
     return recommendation
+
+
+@router.post("/{product_id}/recommendations/{recommendation_id}/apply", response_model=RecommendationRead)
+def apply_recommendation(
+    retailer_id: str,
+    product_id: str,
+    recommendation_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Recommendation:
+    """Commit the recommended price to production and record deployment audit evidence."""
+
+    retailer = get_authorized_retailer(db, retailer_id, user)
+    product = db.get(Product, product_id)
+    recommendation = db.get(Recommendation, recommendation_id)
+
+    if product is None or recommendation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product or recommendation not found.")
+    if product.retailer_id != retailer.id or recommendation.product_id != product.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation does not match product or retailer.")
+
+    from datetime import datetime, timezone
+    from backend.models.domain import EvidenceDocument
+
+    recommendation.is_applied = True
+    recommendation.applied_at = datetime.now(timezone.utc)
+
+    # Save deployment audit evidence
+    db.add(EvidenceDocument(
+        retailer_id=retailer.id,
+        product_id=product.id,
+        source_type="applied_price",
+        source_id=recommendation.id,
+        title=f"Price applied: {product.external_id}",
+        content=(f"Recommendation {recommendation.id} applied to catalog on {recommendation.applied_at.isoformat()}. "
+                 f"New deployed price: {recommendation.recommended_price:.2f} (previously {recommendation.current_price:.2f}). "
+                 f"Expected profit: {recommendation.expected_profit:.2f}."),
+        metadata_json={
+            "applied_price": recommendation.recommended_price,
+            "previous_price": recommendation.current_price,
+            "applied_at": recommendation.applied_at.isoformat(),
+        },
+    ))
+
+    db.commit()
+    db.refresh(recommendation)
+    return recommendation
+
+
+@router.get("/{product_id}/recommendations/latest", response_model=RecommendationRead)
+def get_latest_recommendation(
+    retailer_id: str,
+    product_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Recommendation:
+    retailer = get_authorized_retailer(db, retailer_id, user)
+    product = db.get(Product, product_id)
+    if product is None or product.retailer_id != retailer.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Retailer or product not found.")
+
+    rec = db.scalar(
+        select(Recommendation)
+        .where(Recommendation.product_id == product.id)
+        .order_by(Recommendation.created_at.desc())
+    )
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No recommendations found for this product.")
+    return rec
+

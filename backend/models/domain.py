@@ -6,7 +6,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.database import Base
@@ -64,6 +64,7 @@ class DatasetUpload(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     retailer_id: Mapped[str] = mapped_column(ForeignKey("retailers.id"), index=True)
     source_filename: Mapped[str] = mapped_column(String(500))
+    file_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     storage_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     mapping: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     quality_report: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
@@ -148,6 +149,8 @@ class Recommendation(Base):
     elasticity_ci_upper: Mapped[float | None] = mapped_column(Float, nullable=True)
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     constraints_applied: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    is_applied: Mapped[bool] = mapped_column(Boolean, default=False)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     model_run: Mapped["ModelRun"] = relationship(back_populates="recommendations")

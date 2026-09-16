@@ -30,13 +30,32 @@ def generate_gemini_report(question: str, evidence: list[RetrievedEvidence]) -> 
     if not settings.gemini_api_key:
         raise RuntimeError("Gemini is not configured. Set GEMINI_API_KEY in .env and restart the backend.")
     from google import genai
+    from google.genai.errors import APIError
 
     client = genai.Client(api_key=settings.gemini_api_key)
-    response = client.models.generate_content(
-        model=settings.gemini_model,
-        contents=build_gemini_prompt(question, evidence),
-    )
-    text = (response.text or "").strip()
-    if not text:
-        raise RuntimeError("Gemini returned an empty report.")
-    return text
+    prompt = build_gemini_prompt(question, evidence)
+
+    models_to_try = [settings.gemini_model]
+    if settings.gemini_model != "gemini-1.5-flash":
+        models_to_try.append("gemini-1.5-flash")
+
+    last_error: Exception | None = None
+    for model_name in models_to_try:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+            )
+            text = (response.text or "").strip()
+            if text:
+                return text
+        except APIError as exc:
+            last_error = exc
+            continue
+        except Exception as exc:
+            last_error = exc
+            continue
+
+    if last_error:
+        raise RuntimeError(f"Gemini API error ({type(last_error).__name__}): {last_error}") from last_error
+    raise RuntimeError("Gemini returned an empty report.")

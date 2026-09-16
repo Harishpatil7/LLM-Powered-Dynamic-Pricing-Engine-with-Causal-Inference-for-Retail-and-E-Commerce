@@ -17,7 +17,10 @@ def test_persist_validated_dataset_creates_traceable_records(tmp_path, monkeypat
     retailer = Retailer(name="Acme Retail")
     session.add(retailer)
     session.commit()
-    monkeypatch.setattr("backend.services.dataset_ingestion.UPLOAD_ROOT", tmp_path / "uploads")
+    from backend.services.storage import LocalStorageProvider, compute_sha256
+
+    test_storage = LocalStorageProvider(base_dir=tmp_path / "uploads")
+    monkeypatch.setattr("backend.services.dataset_ingestion.get_storage_provider", lambda: test_storage)
 
     dataset = persist_validated_dataset(
         db=session,
@@ -28,7 +31,9 @@ def test_persist_validated_dataset_creates_traceable_records(tmp_path, monkeypat
     )
     session.commit()
 
+    assert dataset.file_hash == compute_sha256(CSV)
     assert (tmp_path / "uploads" / retailer.id / f"{dataset.id}.csv").exists()
     assert session.scalar(select(func.count()).select_from(DatasetUpload)) == 1
     assert session.scalar(select(func.count()).select_from(Product)) == 2
     assert session.scalar(select(func.count()).select_from(SalesObservation)) == 3
+

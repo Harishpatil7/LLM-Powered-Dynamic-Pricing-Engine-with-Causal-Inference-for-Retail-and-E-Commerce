@@ -146,30 +146,36 @@ def retrieve_evidence(db: Session, *, retailer_id: str, product_id: str, questio
         latest_by_type.setdefault(document.source_type, document)
     deduplicated_docs = list(latest_by_type.values())
 
-    # Build LangChain Documents
-    lc_docs = []
-    for doc in deduplicated_docs:
-        lc_docs.append(LCDocument(
-            page_content=doc.content,
-            metadata={"id": doc.id, "title": doc.title, "source_type": doc.source_type}
-        ))
-
-    # Initialize Embeddings and Vector Store
-    embeddings = get_embeddings_model()
-    vector_store = InMemoryVectorStore.from_documents(lc_docs, embeddings)
-
-    # Perform search
-    results = vector_store.similarity_search_with_score(question, k=limit)
-
-    # Map results back to db records
+    # Build LangChain Documents and query vector store
     retrieved = []
-    db_docs_by_id = {doc.id: doc for doc in deduplicated_docs}
-    for lc_doc, score in results:
-        doc_id = lc_doc.metadata.get("id")
-        db_doc = db_docs_by_id.get(doc_id)
-        if db_doc:
-            # Scale distance metric to a standard score
-            retrieved.append(RetrievedEvidence(document=db_doc, score=float(score)))
+    try:
+        lc_docs = []
+        for doc in deduplicated_docs:
+            lc_docs.append(LCDocument(
+                page_content=doc.content,
+                metadata={"id": doc.id, "title": doc.title, "source_type": doc.source_type}
+            ))
+
+        # Initialize Embeddings and Vector Store
+        embeddings = get_embeddings_model()
+        vector_store = InMemoryVectorStore.from_documents(lc_docs, embeddings)
+
+        # Perform search
+        results = vector_store.similarity_search_with_score(question, k=limit)
+
+        # Map results back to db records
+        db_docs_by_id = {doc.id: doc for doc in deduplicated_docs}
+        for lc_doc, score in results:
+            doc_id = lc_doc.metadata.get("id")
+            db_doc = db_docs_by_id.get(doc_id)
+            if db_doc:
+                retrieved.append(RetrievedEvidence(document=db_doc, score=float(score)))
+    except Exception:
+        retrieved = []
+
+    # If vector retrieval yielded no results or encountered an issue, provide all verified documents directly
+    if not retrieved:
+        retrieved = [RetrievedEvidence(document=doc, score=1.0) for doc in deduplicated_docs]
 
     return retrieved
 

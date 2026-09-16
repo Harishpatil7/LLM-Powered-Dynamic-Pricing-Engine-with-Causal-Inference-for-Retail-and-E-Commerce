@@ -1,6 +1,18 @@
-import { Bot, FileSearch, Sparkles } from 'lucide-react';
+import { Bot, FileSearch, Loader2, Sparkles } from 'lucide-react';
 
-export default function EvidenceReportPanel({ selected, question, onQuestionChange, onPreview, onGenerate, report, busy }) {
+export default function EvidenceReportPanel({
+  selected,
+  question,
+  onQuestionChange,
+  onPreview,
+  onGenerate,
+  report,
+  isBusy,
+  actionLoading,
+}) {
+  const isPreviewLoading = actionLoading === 'preview_report';
+  const isGenerateLoading = actionLoading === 'gemini_report';
+
   return (
     <section className="apple-card liquid-glass" style={{ marginTop: 28 }}>
       <span className="telemetry-label">EVIDENCE & GEMINI REPORTS</span>
@@ -9,11 +21,19 @@ export default function EvidenceReportPanel({ selected, question, onQuestionChan
         {selected ? `Reports are scoped to ${selected.name || selected.external_id}. The system retrieves only your stored dataset, causal-analysis, and recommendation evidence.` : 'Select a real uploaded product before requesting evidence.'}
       </p>
       <label style={{ display: 'block', marginTop: 18, color: 'var(--text-secondary)', fontSize: 12 }}>Report question
-        <textarea className="chat-input" value={question} onChange={(event) => onQuestionChange(event.target.value)} disabled={!selected || busy} style={{ width: '100%', minHeight: 82, marginTop: 6, resize: 'vertical' }} />
+        <textarea className="chat-input" value={question} onChange={(event) => onQuestionChange(event.target.value)} disabled={!selected || isBusy} style={{ width: '100%', minHeight: 82, marginTop: 6, resize: 'vertical' }} />
       </label>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 12 }}>
-        <button className="apple-button secondary" onClick={onPreview} disabled={!selected || busy || question.trim().length < 3}><FileSearch className="h-4 w-4" /> {busy ? 'Retrieving…' : 'Retrieve verified evidence'}</button>
-        <button className="apple-button" onClick={onGenerate} disabled={!selected || busy || question.trim().length < 3}><Sparkles className="h-4 w-4" /> {busy ? 'Generating…' : 'Generate Gemini report'}</button>
+        <button className="apple-button secondary" onClick={onPreview} disabled={!selected || isBusy || question.trim().length < 3}>
+          {isPreviewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSearch className="h-4 w-4" />}
+          {' '}
+          {isPreviewLoading ? 'Retrieving…' : 'Retrieve verified evidence'}
+        </button>
+        <button className="apple-button" onClick={onGenerate} disabled={!selected || isBusy || question.trim().length < 3}>
+          {isGenerateLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          {' '}
+          {isGenerateLoading ? 'Generating…' : 'Generate Gemini report'}
+        </button>
       </div>
       <p style={{ marginTop: 10, color: 'var(--text-muted)', fontSize: 11 }}>Gemini cannot add unverified facts or create a recommendation when the retrieved causal evidence says it is unsafe.</p>
 
@@ -28,3 +48,4 @@ export default function EvidenceReportPanel({ selected, question, onQuestionChan
     </section>
   );
 }
+

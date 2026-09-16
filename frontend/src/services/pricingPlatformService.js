@@ -34,9 +34,17 @@ export function validateDataset(file) {
 }
 export function getDatasets(retailerId) { return jsonRequest(`/api/v1/datasets/retailers/${retailerId}`); }
 export function getProducts(retailerId) { return jsonRequest(`/api/v1/retailers/${retailerId}/products`); }
-export function runCausalAnalysis(retailerId, productId) { return jsonRequest(`/api/v1/retailers/${retailerId}/products/${productId}/causal-runs`, { method: 'POST' }); }
+export function runCausalAnalysis(retailerId, productId, asyncMode = true) { 
+  return jsonRequest(`/api/v1/retailers/${retailerId}/products/${productId}/causal-runs?async_mode=${asyncMode}`, { method: 'POST' }); 
+}
+export function getCausalRunStatus(retailerId, productId, modelRunId) {
+  return jsonRequest(`/api/v1/retailers/${retailerId}/products/${productId}/causal-runs/${modelRunId}`);
+}
 export function createRecommendation(retailerId, productId, modelRunId, constraints) {
   return jsonRequest(`/api/v1/retailers/${retailerId}/products/${productId}/model-runs/${modelRunId}/recommendations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(constraints) });
+}
+export function applyRecommendation(retailerId, productId, recommendationId) {
+  return jsonRequest(`/api/v1/retailers/${retailerId}/products/${productId}/recommendations/${recommendationId}/apply`, { method: 'POST' });
 }
 export function previewReport(retailerId, productId, question) {
   return jsonRequest(`/api/v1/retailers/${retailerId}/products/${productId}/reports/preview`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question }) });
