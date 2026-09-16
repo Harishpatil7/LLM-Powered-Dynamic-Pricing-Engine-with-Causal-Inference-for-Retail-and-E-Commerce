@@ -21,6 +21,7 @@ except Exception:
 
 def resolved_database_url(database_url: str) -> str:
     """Normalize database URL for production and local environments."""
+    from sqlalchemy.engine import make_url
 
     # Automatically map generic mysql:// to pure-python mysql+pymysql://
     if database_url.startswith("mysql://"):
@@ -30,7 +31,19 @@ def resolved_database_url(database_url: str) -> str:
     if database_url.startswith(prefix):
         relative_path = database_url.removeprefix(prefix)
         return f"sqlite:///{(PROJECT_ROOT / relative_path).as_posix()}"
+
+    if database_url.startswith("mysql"):
+        try:
+            url = make_url(database_url)
+            # TiDB Cloud and MySQL require a target database (default: 'test')
+            if not url.database or url.database.strip() in ("", "/"):
+                url = url.set(database="test")
+                database_url = url.render_as_string(hide_password=False)
+        except Exception:
+            pass
+
     return database_url
+
 
 
 
