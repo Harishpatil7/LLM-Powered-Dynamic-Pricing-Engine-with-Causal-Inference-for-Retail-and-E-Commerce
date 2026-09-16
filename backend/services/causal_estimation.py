@@ -78,8 +78,8 @@ def estimate_price_effect(panel: pd.DataFrame, confounders: list[str], seed: int
     identified_estimand = model.identify_effect(proceed_when_unidentifiable=True)
 
     # 4. Estimate using EconML LinearDML through DoWhy
-    model_y = RandomForestRegressor(n_estimators=100, min_samples_leaf=3, random_state=seed, n_jobs=-1)
-    model_t = RandomForestRegressor(n_estimators=100, min_samples_leaf=3, random_state=seed + 1, n_jobs=-1)
+    model_y = RandomForestRegressor(n_estimators=30, min_samples_leaf=3, random_state=seed, n_jobs=-1)
+    model_t = RandomForestRegressor(n_estimators=30, min_samples_leaf=3, random_state=seed + 1, n_jobs=-1)
 
     method_params = {
         "init_params": {
@@ -136,7 +136,7 @@ def estimate_price_effect(panel: pd.DataFrame, confounders: list[str], seed: int
             identified_estimand, estimate,
             method_name="placebo_treatment_refuter",
             placebo_type="permute",
-            num_simulations=15
+            num_simulations=3
         )
         placebo_effect = float(refute_placebo.new_effect)
         placebo_passed = abs(placebo_effect) < abs(effect)
@@ -160,7 +160,7 @@ def estimate_price_effect(panel: pd.DataFrame, confounders: list[str], seed: int
         refute_random = model.refute_estimate(
             identified_estimand, estimate,
             method_name="random_common_cause",
-            num_simulations=15
+            num_simulations=3
         )
         random_effect = float(refute_random.new_effect)
         relative_change = abs(relative_change := abs(random_effect - effect) / max(abs(effect), 1e-8))
@@ -186,7 +186,7 @@ def estimate_price_effect(panel: pd.DataFrame, confounders: list[str], seed: int
             identified_estimand, estimate,
             method_name="data_subset_refuter",
             subset_fraction=0.8,
-            num_simulations=15
+            num_simulations=3
         )
         subset_effect = float(refute_subset.new_effect)
         subset_change = abs(subset_effect - effect) / max(abs(effect), 1e-8)

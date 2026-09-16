@@ -43,6 +43,9 @@ export function runCausalAnalysis(retailerId, productId, asyncMode = true) {
 export function getCausalRunStatus(retailerId, productId, modelRunId) {
   return jsonRequest(`/api/v1/retailers/${retailerId}/products/${productId}/causal-runs/${modelRunId}`);
 }
+export function getLatestCausalRun(retailerId, productId) {
+  return jsonRequest(`/api/v1/retailers/${retailerId}/products/${productId}/causal-runs/latest`);
+}
 export function createRecommendation(retailerId, productId, modelRunId, constraints) {
   return jsonRequest(`/api/v1/retailers/${retailerId}/products/${productId}/model-runs/${modelRunId}/recommendations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(constraints) });
 }

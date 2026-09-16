@@ -8,6 +8,7 @@ import {
   generateGeminiReport,
   getCausalRunStatus,
   getDatasets,
+  getLatestCausalRun,
   getProducts,
   getRetailers,
   previewReport,
@@ -127,6 +128,67 @@ export default function RealDataWorkspace({ onBack, user }) {
     });
   }
 
+  async function pollRun(runId, targetProductId) {
+    const prodId = targetProductId || selected?.id;
+    if (!retailerId || !prodId || !runId) return;
+
+    let currentResult = null;
+    for (let i = 0; i < 120; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        currentResult = await getCausalRunStatus(retailerId, prodId, runId);
+        setAnalysis(currentResult);
+        if (currentResult.status === 'completed' || currentResult.status === 'blocked' || currentResult.status === 'failed') {
+          break;
+        }
+        if (currentResult.progress_step) {
+          setMessage(`Causal analysis: ${currentResult.progress_step}...`);
+        }
+      } catch {
+        // Transient network hiccup; continue polling
+      }
+    }
+
+    if (currentResult) {
+      setMessage(
+        currentResult.status === 'blocked'
+          ? (currentResult.limitations?.join(' ') || 'Causal analysis blocked.')
+          : currentResult.status === 'failed'
+          ? 'Causal analysis encountered an execution failure.'
+          : currentResult.status === 'completed'
+          ? 'Causal analysis completed successfully.'
+          : 'Still calculating in cloud background. Click Refresh to check status.'
+      );
+    }
+  }
+
+  useEffect(() => {
+    if (!retailerId || !selected?.id) {
+      setAnalysis(null);
+      setRecommendation(null);
+      setReport(null);
+      return undefined;
+    }
+
+    let active = true;
+    getLatestCausalRun(retailerId, selected.id)
+      .then((latestRun) => {
+        if (!active) return;
+        setAnalysis(latestRun);
+        if (latestRun.status === 'queued' || latestRun.status === 'running') {
+          pollRun(latestRun.model_run_id, selected.id);
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        setAnalysis(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [retailerId, selected?.id]);
+
   function handleAnalysis() {
     runWork('run_analysis', async () => {
       let result = await runCausalAnalysis(retailerId, selected.id, true);
@@ -135,24 +197,14 @@ export default function RealDataWorkspace({ onBack, user }) {
 
       if (result.status === 'queued' || result.status === 'running') {
         setMessage(`Causal analysis ${result.status} in background...`);
-        for (let i = 0; i < 60; i++) {
-          await new Promise((r) => setTimeout(r, 2000));
-          result = await getCausalRunStatus(retailerId, selected.id, result.model_run_id);
-          setAnalysis(result);
-          if (result.status === 'completed' || result.status === 'blocked' || result.status === 'failed') {
-            break;
-          }
-          if (result.progress_step) {
-            setMessage(`Causal analysis: ${result.progress_step}...`);
-          }
-        }
+        await pollRun(result.model_run_id, selected.id);
+      } else {
+        setMessage(result.status === 'blocked'
+          ? (result.limitations?.join(' ') || 'Causal analysis blocked.')
+          : result.status === 'failed'
+          ? 'Causal analysis encountered an execution failure.'
+          : 'Causal analysis completed successfully.');
       }
-
-      setMessage(result.status === 'blocked' 
-        ? (result.limitations?.join(' ') || 'Causal analysis blocked.') 
-        : result.status === 'failed' 
-        ? 'Causal analysis encountered an execution failure.' 
-        : 'Causal analysis completed successfully.');
     });
   }
 
@@ -311,9 +363,19 @@ export default function RealDataWorkspace({ onBack, user }) {
                     <p style={{ color: 'var(--text-primary)', marginTop: 10, fontSize: 13, fontWeight: 500 }}>
                       Double Machine Learning (LinearDML) is training across 3 cross-validation folds and running 3 DoWhy refuters.
                     </p>
-                    <p style={{ color: 'var(--text-secondary)', marginTop: 6, fontSize: 12 }}>
-                      Live pipeline status: <span style={{ color: '#e0f2fe', fontWeight: 600 }}>{analysis.progress_step || 'Fitting cross-validation folds...'}</span>
-                    </p>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, flexWrap: 'wrap', gap: 8 }}>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: 12, margin: 0 }}>
+                        Live pipeline status: <span style={{ color: '#e0f2fe', fontWeight: 600 }}>{analysis.progress_step || 'Fitting cross-validation folds...'}</span>
+                      </p>
+                      <button
+                        className="apple-button secondary"
+                        type="button"
+                        onClick={() => pollRun(analysis.model_run_id, selected?.id)}
+                        style={{ padding: '3px 8px', fontSize: 11 }}
+                      >
+                        Refresh status
+                      </button>
+                    </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 16 }}>
                       <div className="product-pill" style={{ padding: '8px 10px', textAlign: 'center', borderColor: 'rgba(56, 189, 248, 0.4)', background: 'rgba(56, 189, 248, 0.1)' }}>
