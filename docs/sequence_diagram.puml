@@ -1,0 +1,294 @@
+@startuml LLM_DPECI_End_to_End_Sequence
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam handwritten false
+skinparam roundcorner 8
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI", "Helvetica", "Arial", sans-serif
+skinparam defaultFontSize 12
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam boxPadding 10
+skinparam participantPadding 15
+
+skinparam sequence {
+    ArrowColor #2C3E50
+    ArrowThickness 1.2
+    ActorBorderColor #2C3E50
+    ActorBackgroundColor #ECF0F1
+    LifeLineBorderColor #7F8C8D
+    LifeLineBackgroundColor #BDC3C7
+    ParticipantBorderColor #34495E
+    ParticipantBackgroundColor #ECF0F1
+    ParticipantFontSize 12
+    ParticipantFontStyle bold
+    GroupBorderColor #7F8C8D
+    GroupBackgroundColor #F8F9F9
+    GroupHeaderFontStyle bold
+    NoteBorderColor #BDC3C7
+    NoteBackgroundColor #FEF9E7
+}
+
+title **LLM-Powered Dynamic Pricing Engine with Causal Inference (LLM-DPECI)**\n== End-to-End System Interaction & Decision Sequence ==
+
+actor "Pricing Manager\n(Business User)" as User #E8F8F5
+boundary "React 19 Frontend\n(RealDataWorkspace)" as UI #EBF5FB
+control "FastAPI Gateway\n(Routes & Auth)" as API #E8F6F3
+entity "Dataset Validator\n& Ingestion" as Ingestion #FEF5E7
+entity "Feature Engineering\n& Panel Builder" as Features #F4ECF7
+entity "Causal Engine\n(DoWhy + LinearDML)" as Causal #FDEDEC
+entity "Bayesian Optimizer\n(skopt GP-Minimize)" as Optimizer #EAF2F8
+database "Relational DB\n(SQLite / PostgreSQL)" as DB #EAEDED
+database "Vector Evidence Store\n(LangChain + Embeddings)" as RAG #FCF3CF
+control "Google Gemini LLM\n(GenAI Grounded RAG)" as LLM #F5EEF8
+
+autonumber 1 "<b>[00]</b>"
+
+== PHASE 1: Dataset Upload, Validation & Tenant Ingestion ==
+
+User -> UI: Uploads historical sales CSV\n(date, SKU, price, units_sold, unit_cost)
+activate UI
+
+UI -> API: POST /api/v1/datasets/validate\n(Multipart CSV + column mapping)
+activate API
+
+API -> Ingestion: validate_dataset_csv(content, filename, mapping)
+activate Ingestion
+Ingestion -> Ingestion: Check missing values, types, non-negativity,\nand price variation (nunique(price) >= 2)
+Ingestion --> API: Return DatasetQualityReport\n(valid_rows, invalid_rows, column_summary)
+deactivate Ingestion
+
+API --> UI: 200 OK (DatasetQualityReport)
+deactivate API
+
+User -> UI: Confirms & commits dataset upload
+UI -> API: POST /api/v1/datasets/retailers/{retailer_id}\n(CSV + mapping_json)
+activate API
+
+API -> Ingestion: persist_validated_dataset(db, retailer, content)
+activate Ingestion
+Ingestion -> DB: Insert DatasetUpload, Product SKUs,\nand canonical SalesObservation records
+activate DB
+DB --> Ingestion: Commit confirmation
+deactivate DB
+
+Ingestion -> RAG: add_dataset_evidence(dataset_metadata)
+activate RAG
+RAG -> DB: Save EvidenceDocument(source_type="dataset_quality")
+activate DB
+DB --> RAG: Stored
+deactivate DB
+RAG --> Ingestion: Vector indexed
+deactivate RAG
+
+Ingestion --> API: DatasetUploadRead
+deactivate Ingestion
+
+API --> UI: 201 Created (Dataset Upload Details)
+UI --> User: Display dataset stats, catalog SKUs & quality metrics
+deactivate UI
+
+== PHASE 2: Feature Engineering & Causal Estimation (DoWhy + EconML) ==
+
+User -> UI: Selects Product SKU & clicks "Run Causal Analysis"
+activate UI
+
+UI -> API: POST /api/v1/retailers/{id}/products/{sku}/causal-runs?async_mode=true
+activate API
+
+API -> DB: Query SalesObservation history for SKU
+activate DB
+DB --> API: Return raw transaction records
+deactivate DB
+
+API -> DB: Create ModelRun(status="queued", progress_step="Queued")
+activate DB
+DB --> API: ModelRun ID created
+deactivate DB
+
+API -> API: Enqueue background task (_execute_causal_job)
+API --> UI: 201 Created (ModelRun queued)
+deactivate API
+
+note over UI, API
+  Frontend initiates asynchronous polling:
+  GET /api/v1/retailers/{id}/products/{sku}/causal-runs/{run_id}
+  every 2000ms until status is terminal.
+end note
+
+group Async Background Worker Execution
+    API -> Features: build_product_panel(db, product_id)
+    activate Features
+    Features -> Features: Daily aggregation, calendar seasonality,\nlagged demand, promotional indicators
+    Features --> API: ProductPanel(frame, confounders, eligible)
+    deactivate Features
+
+    alt Product ineligible (insufficient observations < 30 or no price variation)
+        API -> DB: Update ModelRun(status="blocked", limitations)
+        API -> RAG: add_causal_evidence(blocked_run)
+    else Product eligible for causal inference
+        API -> Causal: estimate_price_effect(panel.frame, confounders)
+        activate Causal
+        
+        Causal -> Causal: 1. Separate Treatment Modifiers (X)\nfrom Common Causes (W)
+        Causal -> Causal: 2. DoWhy: CausalModel identification\n(Backdoor criterion)
+        Causal -> Causal: 3. EconML: LinearDML with 3-Fold Cross-Fitting\n(RandomForest for Y & T residualization)
+        Causal -> Causal: 4. Compute ATE, 95% CI [lower, upper],\nand segment-specific heterogeneous elasticities
+        
+        group Robustness Refutation Battery (Safety Gates)
+            Causal -> Causal: Refuter 1: Placebo Treatment (permute prices)
+            Causal -> Causal: Refuter 2: Random Common Cause (+ random confounder)
+            Causal -> Causal: Refuter 3: Data Subset Stability (80% subsample)
+        end
+        
+        Causal --> API: CausalEstimate(effect, ci_lower, ci_upper, diagnostics)
+        deactivate Causal
+
+        API -> DB: Update ModelRun(status="completed", diagnostics, effect, CI)
+        activate DB
+        DB --> API: Updated
+        deactivate DB
+
+        API -> RAG: add_causal_evidence(completed_run)
+        activate RAG
+        RAG -> DB: Save EvidenceDocument(source_type="causal_diagnostics")
+        activate DB
+        DB --> RAG: Stored
+        deactivate DB
+        RAG --> API: Vector snapshot saved
+        deactivate RAG
+    end
+end
+
+UI -> API: GET /api/v1/retailers/{id}/products/{sku}/causal-runs/{run_id}
+activate API
+API -> DB: Fetch latest ModelRun state
+activate DB
+DB --> API: Return ModelRun
+deactivate DB
+API --> UI: 200 OK (status="completed", elasticity, CI, diagnostics)
+deactivate API
+
+UI --> User: Display causal elasticity, 95% CI, and refutation test badges
+deactivate UI
+
+== PHASE 3: Constrained Bayesian Profit Optimization (skopt GP-Minimize) ==
+
+User -> UI: Inputs constraints:\n(min_margin=15%, max_incr=20%, max_decr=20%, comp_proximity)
+activate UI
+User -> UI: Clicks "Optimize Price"
+
+UI -> API: POST /api/v1/retailers/{id}/products/{sku}/model-runs/{run_id}/recommendations\n(constraints payload)
+activate API
+
+API -> DB: Fetch ModelRun & latest SalesObservation
+activate DB
+DB --> API: ModelRun + SalesObservation (price, cost, demand)
+deactivate DB
+
+group Safety Validation Gate
+    API -> API: Verify: 1. ModelRun status == "completed"\n2. All 3 refutation tests PASSED\n3. CI_upper < 0 (confidently downward-sloping)
+    alt Diagnostics failed OR CI_upper >= 0
+        API --> UI: 409 Conflict: "Causal diagnostics did not pass;\nprice optimization is blocked."
+    end
+end
+
+API -> Optimizer: optimize_price(price, demand, cost, effect, constraints)
+activate Optimizer
+
+Optimizer -> Optimizer: Calculate Margin Floor: UnitCost / (1 - min_margin)
+Optimizer -> Optimizer: Calculate Allowed Bounds [lower_bound, upper_bound]\nincorporating competitor price floor
+Optimizer -> Optimizer: Define Causal Expected Demand:\nD(P) = D0 + beta_causal * (P - P0)
+Optimizer -> Optimizer: Formulate Objective:\nMaximize Profit(P) = (P - UnitCost) * D(P)
+Optimizer -> Optimizer: Run Bayesian Gaussian Process:\ngp_minimize(-profit, bounds, n_calls=30)
+
+Optimizer --> API: OptimizationResult(optimal_price, expected_profit, expected_demand)
+deactivate Optimizer
+
+API -> DB: Insert Recommendation record
+activate DB
+DB --> API: Recommendation ID saved
+deactivate DB
+
+API -> RAG: add_recommendation_evidence(recommendation)
+activate RAG
+RAG -> DB: Save EvidenceDocument(source_type="pricing_recommendation")
+activate DB
+DB --> RAG: Stored
+deactivate DB
+RAG --> API: Vector snapshot saved
+deactivate RAG
+
+API --> UI: 201 Created (RecommendationRead)
+deactivate API
+
+UI --> User: Displays Recommended Price, Expected Demand Lift, and Projected Profit
+deactivate UI
+
+== PHASE 4: Price Deployment & Audit Trail Recording ==
+
+User -> UI: Reviews recommendation & clicks "Apply to Catalog"
+activate UI
+
+UI -> API: POST /api/v1/retailers/{id}/products/{sku}/recommendations/{rec_id}/apply
+activate API
+
+API -> DB: Update Recommendation(is_applied=True, applied_at=NOW)
+activate DB
+DB --> API: Updated
+deactivate DB
+
+API -> DB: Insert EvidenceDocument(source_type="applied_price", audit_metadata)
+activate DB
+DB --> API: Audit Trail committed
+deactivate DB
+
+API --> UI: 200 OK (RecommendationRead with applied status)
+deactivate API
+
+UI -> UI: Refresh Catalog status badge to "Active Price Deployed"
+UI --> User: Confirms deployment of recommended price to production catalog
+deactivate UI
+
+== PHASE 5: Grounded Evidence Retrieval & Gemini LLM Executive Report ==
+
+User -> UI: Asks executive question:\n"Explain verified pricing evidence and safety rationale"
+activate UI
+
+UI -> API: POST /api/v1/retailers/{id}/products/{sku}/reports/generate\n(question payload)
+activate API
+
+API -> RAG: retrieve_evidence(retailer_id, product_id, question)
+activate RAG
+RAG -> DB: Query EvidenceDocuments for Tenant & SKU
+activate DB
+DB --> RAG: Dataset, Causal Run, Recommendation & Deployment records
+deactivate DB
+
+RAG -> RAG: Perform Semantic Vector Search (Gemini Embeddings or TF-IDF)\nScore & rank top relevant evidence documents
+RAG --> API: Return list[RetrievedEvidence]
+deactivate RAG
+
+alt Gemini API Key Available
+    API -> LLM: generate_gemini_report(question, verified_evidence)
+    activate LLM
+    note over API, LLM
+      Prompt injects strictly retrieved verified evidence.
+      Rules:
+      - Plain text headings: Summary, Evidence, Recommendation status, Limitations
+      - ZERO price invention, ZERO external math calculation
+      - Explicitly flag any failed diagnostic or missing recommendation
+    end note
+    LLM --> API: Structured Executive Briefing text
+    deactivate LLM
+    API --> UI: 200 OK (report_type="gemini_grounded_report", answer, sources)
+else API Unavailable / Network Offline (Fallback Mode)
+    API -> API: build_grounded_preview(verified_evidence)\n(Deterministic template synthesis)
+    API --> UI: 200 OK (report_type="deterministic_audit_fallback", answer, sources)
+end
+deactivate API
+
+UI --> User: Renders Executive Report with verified citations, confidence intervals,\nand audit lineage badges
+deactivate UI
+
+@enduml

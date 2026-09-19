@@ -350,7 +350,7 @@ To run a causal model, a product panel must satisfy:
 - **Causal Identification**: DoWhy 0.14.0
 - **Causal Estimation**: EconML 0.16.0 (LinearDML, RandomForest nuisance estimators)
 - **Optimization**: Scikit-Optimize 0.10.2 (Gaussian Processes)
-- **LLM & RAG**: Google GenAI SDK (`gemini-2.0-flash`), LangChain 0.3, LangChain Google GenAI
+- **LLM & RAG**: Google GenAI SDK (`gemini-3.6-flash`), LangChain 0.3, LangChain Google GenAI
 
 ### Frontend
 - **Framework**: React 19.2.6 + Vite 8.0
@@ -387,7 +387,7 @@ API_PREFIX=/api/v1
 
 # Optional Gemini report generation (leave blank to use deterministic preview)
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-3.6-flash
 
 # Authentication Secret (replace with random secret before production)
 AUTH_SECRET_KEY=replace-with-a-long-random-secret-before-deployment

@@ -35,9 +35,33 @@ def generate_gemini_report(question: str, evidence: list[RetrievedEvidence]) -> 
     client = genai.Client(api_key=settings.gemini_api_key)
     prompt = build_gemini_prompt(question, evidence)
 
-    models_to_try = [settings.gemini_model]
-    if settings.gemini_model != "gemini-1.5-flash":
-        models_to_try.append("gemini-1.5-flash")
+    deprecated_models = {
+        "gemini-1.0-pro",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-8b",
+        "gemini-1.5-pro",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-exp",
+        "gemini-2.0-flash-thinking-exp",
+        "gemini-2.0-pro-exp",
+        "gemini-2.5-flash",
+    }
+    candidates = [
+        settings.gemini_model,
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-flash-latest",
+        "gemini-3.7-flash",
+        "gemini-3.8-flash",
+    ]
+    models_to_try: list[str] = []
+    for m in candidates:
+        if m and m not in deprecated_models and m not in models_to_try:
+            models_to_try.append(m)
+
+    if not models_to_try:
+        models_to_try = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-latest"]
 
     last_error: Exception | None = None
     for model_name in models_to_try:
