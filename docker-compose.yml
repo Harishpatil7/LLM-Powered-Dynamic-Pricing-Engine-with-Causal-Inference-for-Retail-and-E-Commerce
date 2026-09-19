@@ -1,0 +1,142 @@
+# ==============================================================================
+# LLM-DPECI Production Microservices Orchestration (Docker Compose v3.8+)
+# ==============================================================================
+# Services:
+#   1. backend  : FastAPI ASGI Application (ML Causal Engine + RAG + API)
+#   2. frontend : React 19 + Vite (Served via Nginx Alpine reverse proxy)
+#   3. redis    : In-Memory Key-Value Store (LLM report caching + Rate limiting)
+#   4. db       : MySQL 8.0 Database (Local transactional & analytics storage)
+# ==============================================================================
+
+version: "3.8"
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. FASTAPI BACKEND SERVICE
+  # ----------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm_dpeci_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - API_PREFIX=/api/v1
+      # Connects to MySQL service container using internal Docker DNS network
+      - DATABASE_URL=${DATABASE_URL:-mysql+pymysql://dpeci_user:dpeci_password@db:3306/dpeci_db?charset=utf8mb4}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.6-flash}
+      - AUTH_SECRET_KEY=${AUTH_SECRET_KEY:-production-docker-secret-key-change-me}
+      - AUTH_TOKEN_TTL_HOURS=24
+    volumes:
+      - backend_artifacts:/app/data/artifacts
+      - backend_uploads:/app/data/uploads
+      - backend_processed:/app/data/processed
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    networks:
+      - dpeci_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ----------------------------------------------------------------------------
+  # 2. REACT + NGINX FRONTEND SERVICE
+  # ----------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: llm_dpeci_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - dpeci_network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ----------------------------------------------------------------------------
+  # 3. REDIS IN-MEMORY CACHE SERVICE
+  # ----------------------------------------------------------------------------
+  redis:
+    image: redis:7.4-alpine
+    container_name: llm_dpeci_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server 
+      --appendonly yes 
+      --maxmemory 256mb 
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - dpeci_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ----------------------------------------------------------------------------
+  # 4. MYSQL 8.0 RELATIONAL DATABASE SERVICE
+  # ----------------------------------------------------------------------------
+  db:
+    image: mysql:8.0
+    container_name: llm_dpeci_db
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_secure_password
+      - MYSQL_DATABASE=dpeci_db
+      - MYSQL_USER=dpeci_user
+      - MYSQL_PASSWORD=dpeci_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - dpeci_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "dpeci_user", "-pdpeci_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+# ------------------------------------------------------------------------------
+# SHARED NETWORKS & PERSISTENT VOLUMES
+# ------------------------------------------------------------------------------
+networks:
+  dpeci_network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_artifacts:
+    driver: local
+  backend_uploads:
+    driver: local
+  backend_processed:
+    driver: local

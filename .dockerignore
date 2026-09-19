@@ -1,0 +1,35 @@
+# Git and IDE
+.git
+.gitignore
+.vscode
+.idea
+
+# Python virtual environment and bytecode
+.venv
+venv
+ENV
+env
+__pycache__
+*.py[cod]
+*$py.class
+.pytest_cache
+.coverage
+htmlcov
+
+# Node and frontend build artifacts
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# Local artifacts, database files, and caches
+data/artifacts/*
+data/uploads/*
+data/processed/*
+*.db
+*.sqlite3
+*.log
+
+# Sensitive secrets (Must be passed via environment variables, never baked into images)
+.env
+.env.local
+.env.*.local
