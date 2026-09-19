@@ -33,22 +33,29 @@ def get_redis_client() -> Any:
         return _redis_client
 
     try:
+        import re
         import redis
 
-        _redis_client = redis.Redis.from_url(
-            settings.redis_url,
-            decode_responses=True,
-            socket_connect_timeout=2.0,
-            socket_timeout=2.0,
-            health_check_interval=30,
-        )
+        kwargs: dict[str, Any] = {
+            "decode_responses": True,
+            "socket_connect_timeout": 3.0,
+            "socket_timeout": 3.0,
+            "health_check_interval": 30,
+        }
+        if settings.redis_url.startswith("rediss://"):
+            # Required for serverless cloud SSL (Upstash, AWS ElastiCache)
+            kwargs["ssl_cert_reqs"] = "none"
+
+        _redis_client = redis.Redis.from_url(settings.redis_url, **kwargs)
         # Test connection ping
         _redis_client.ping()
         _redis_available = True
-        logger.info("[Redis] Connected successfully to in-memory cache pool at %s", settings.redis_url)
+        sanitized_url = re.sub(r":([^:@]+)@", ":****@", settings.redis_url)
+        logger.info("[Redis] Connected successfully to in-memory cache pool at %s", sanitized_url)
         return _redis_client
     except Exception as exc:
-        logger.warning("[Redis] Cache unavailable (%s). Falling back to direct database execution.", exc)
+        sanitized_url = re.sub(r":([^:@]+)@", ":****@", settings.redis_url) if settings.redis_url else ""
+        logger.warning("[Redis] Cache unavailable at %s (%s). Falling back to direct database execution.", sanitized_url, exc)
         _redis_available = False
         _redis_client = None
         return None
