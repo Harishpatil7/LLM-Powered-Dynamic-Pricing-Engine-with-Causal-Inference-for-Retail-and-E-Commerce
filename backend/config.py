@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     environment: str = "development"
     api_prefix: str = "/api/v1"
     database_url: str = "sqlite:///./data/app.db"
+    redis_url: str | None = None
+    redis_cache_ttl_seconds: int = 3600
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.6-flash"
     # Replace this value before deploying. It intentionally lets the local

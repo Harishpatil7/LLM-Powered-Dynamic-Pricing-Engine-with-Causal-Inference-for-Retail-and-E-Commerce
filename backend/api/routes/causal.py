@@ -11,6 +11,7 @@ from backend.api.dependencies import get_authorized_retailer, get_current_user
 from backend.database import SessionLocal, get_db
 from backend.models.domain import ModelRun, Product, SalesObservation, User
 from backend.schemas.causal import CausalRunRead, DiagnosticRead
+from backend.services.cache_service import invalidate_product_cache
 from backend.services.causal_estimation import estimate_price_effect
 from backend.services.evidence_retrieval import add_causal_evidence
 from backend.services.feature_engineering import build_product_panel
@@ -83,6 +84,7 @@ def _execute_causal_job(run_id: str, product_id: str, retailer_id: str) -> None:
         run.configuration = {**(run.configuration or {}), "progress_step": "Complete"}
         add_causal_evidence(db, product, run)
         db.commit()
+        invalidate_product_cache(retailer_id, product_id)
 
     except Exception as exc:
         run = db.get(ModelRun, run_id)
@@ -174,6 +176,7 @@ def run_causal_analysis(
     db.flush()
     add_causal_evidence(db, product, run)
     db.commit()
+    invalidate_product_cache(retailer.id, product.id)
     db.refresh(run)
     return _to_causal_read(run, product.id)
 
