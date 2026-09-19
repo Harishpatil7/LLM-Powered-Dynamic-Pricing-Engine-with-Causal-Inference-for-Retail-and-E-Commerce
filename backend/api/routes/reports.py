@@ -5,6 +5,7 @@ from backend.api.dependencies import get_authorized_retailer, get_current_user
 from backend.database import get_db
 from backend.models.domain import Product, User
 from backend.schemas.reports import EvidenceSourceRead, GeminiReport, GroundedReportPreview, ReportPreviewRequest
+from backend.config import settings
 from backend.services.evidence_retrieval import build_grounded_preview, retrieve_evidence
 from backend.services.gemini_report import generate_gemini_report
 
@@ -119,8 +120,10 @@ def generate_report(
 
     # 5. Populate Cache on successful AI generation
     if report_type == "gemini_grounded_report":
-        # Convert Pydantic model to JSON-serializable dict
-        set_cached_json(cache_key, response.model_dump(mode="json"), ttl_seconds=settings.redis_cache_ttl_seconds)
+        try:
+            set_cached_json(cache_key, response.model_dump(mode="json"), ttl_seconds=settings.redis_cache_ttl_seconds)
+        except Exception:
+            pass
 
     return response
 
