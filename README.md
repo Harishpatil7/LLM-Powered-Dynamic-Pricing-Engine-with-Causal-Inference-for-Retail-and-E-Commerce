@@ -1,12 +1,13 @@
 # LLM-DPECI: LLM-Powered Dynamic Pricing Engine with Causal Inference
 
-[![Python Version](https://img.shields.io/badge/python-3.13-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![CI/CD Pipeline](https://github.com/Harishpatil7/LLM-Powered-Dynamic-Pricing-Engine-with-Causal-Inference-for-Retail-and-E-Commerce/actions/workflows/ci.yml/badge.svg)](https://github.com/Harishpatil7/LLM-Powered-Dynamic-Pricing-Engine-with-Causal-Inference-for-Retail-and-E-Commerce/actions/workflows/ci.yml)
+[![Docker](https://img.shields.io/badge/Docker-Multi--Stage-2496ED.svg?logo=docker&logoColor=white)](Dockerfile)
+[![Redis](https://img.shields.io/badge/Redis-Cache--Aside-DC382D.svg?logo=redis&logoColor=white)](https://redis.io/)
+[![Python Version](https://img.shields.io/badge/python-3.11%20%7C%203.13-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115.6-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React Version](https://img.shields.io/badge/React-19.2.6-61DAFB.svg?logo=react&logoColor=black)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-8.0-646CFF.svg?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![DoWhy](https://img.shields.io/badge/DoWhy-0.14.0-FF6F00.svg)](https://py-why.github.io/dowhy/)
-[![EconML](https://img.shields.io/badge/EconML-0.16.0-0A85EA.svg)](https://econml.azurewebsites.net/)
-[![Google GenAI](https://img.shields.io/badge/Google_GenAI-Gemini_2.0_Flash-8E75B2.svg?logo=google&logoColor=white)](https://ai.google.dev/)
+[![Google GenAI](https://img.shields.io/badge/Google_GenAI-Gemini_3.6_Flash-8E75B2.svg?logo=google&logoColor=white)](https://ai.google.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 An enterprise-grade, evidence-grounded dynamic pricing decision engine for retail and e-commerce. **LLM-DPECI** bridges econometric causal inference, Bayesian optimization, and Large Language Models: it estimates unconfounded price elasticities via **DoWhy** and **EconML Double Machine Learning (LinearDML)**, optimizes safe gross-profit margins within rigid business guardrails via **Gaussian Process optimization**, and synthesizes auditable executive explanations using **Gemini RAG (Retrieval-Augmented Generation)** grounded strictly in verified statistical evidence.
