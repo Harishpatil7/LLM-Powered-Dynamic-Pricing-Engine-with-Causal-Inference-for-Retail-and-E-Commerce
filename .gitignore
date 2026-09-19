@@ -23,3 +23,6 @@ frontend/.vite/
 # IDE
 .vscode/
 
+# Private student interview prep notes (Never commit to public GitHub)
+docs/PHASE*.md
+docs/*_GUIDE.md
