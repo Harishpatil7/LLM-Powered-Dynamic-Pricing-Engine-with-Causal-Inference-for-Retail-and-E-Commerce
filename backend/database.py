@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 import pymysql
 from sqlalchemy import create_engine
@@ -50,10 +51,11 @@ def resolved_database_url(database_url: str) -> str:
 
 def build_engine(database_url: str) -> Engine:
     if database_url.startswith("sqlite"):
-        return create_engine(
-            database_url,
-            connect_args={"check_same_thread": False},
-        )
+        kwargs: dict[str, Any] = {"connect_args": {"check_same_thread": False}}
+        if ":memory:" in database_url:
+            from sqlalchemy.pool import StaticPool
+            kwargs["poolclass"] = StaticPool
+        return create_engine(database_url, **kwargs)
 
     # Production connection pool settings for MySQL / PostgreSQL
     return create_engine(
@@ -72,7 +74,8 @@ class Base(DeclarativeBase):
 DATABASE_URL = resolved_database_url(settings.database_url)
 if DATABASE_URL.startswith("sqlite:///"):
     database_path = DATABASE_URL[len("sqlite:///"):]
-    Path(database_path).parent.mkdir(parents=True, exist_ok=True)
+    if database_path and ":memory:" not in database_path:
+        Path(database_path).parent.mkdir(parents=True, exist_ok=True)
 else:
     try:
         from sqlalchemy.engine import make_url

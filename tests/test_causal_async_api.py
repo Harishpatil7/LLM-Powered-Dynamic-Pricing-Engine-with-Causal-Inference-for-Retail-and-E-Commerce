@@ -9,7 +9,7 @@ from backend.api.dependencies import get_current_user
 from backend.models.domain import DatasetUpload, Product, Retailer, SalesObservation, User, UserRetailer
 
 
-def test_causal_async_endpoints_flow():
+def test_causal_async_endpoints_flow(monkeypatch):
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -57,6 +57,7 @@ def test_causal_async_endpoints_flow():
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = lambda: user
+    monkeypatch.setattr("backend.api.routes.causal.SessionLocal", TestingSessionLocal)
 
     try:
         client = TestClient(app)
