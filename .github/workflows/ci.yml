@@ -70,12 +70,12 @@ jobs:
 
       - name: Execute Automated Pytest Suite
         env:
-          ENVIRONMENT: test
-          DATABASE_URL: sqlite:///:memory:
-          AUTH_SECRET_KEY: ci-test-secret-key-for-github-actions
-          GEMINI_API_KEY: mock-ci-test-key
-          GEMINI_MODEL: gemini-3.6-flash
-          PYTHONPATH: .
+          ENVIRONMENT: "test"
+          DATABASE_URL: "sqlite:///:memory:"
+          AUTH_SECRET_KEY: "ci-test-secret-key-for-github-actions"
+          GEMINI_API_KEY: "mock-ci-test-key"
+          GEMINI_MODEL: "gemini-3.6-flash"
+          PYTHONPATH: "."
         run: |
           python -m pytest tests/ -v --tb=short
 
