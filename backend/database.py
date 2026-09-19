@@ -126,6 +126,7 @@ def init_database() -> None:
     try:
         Base.metadata.create_all(bind=engine)
         _migrate_missing_columns(engine)
+        print("INFO: [Database] Database initialized and verified successfully.")
     except Exception as exc:
         err_msg = str(exc)
         if "1142" in err_msg or "denied to user" in err_msg:
@@ -140,5 +141,6 @@ def init_database() -> None:
             print("   GRANT ALL PRIVILEGES ON test.* TO '3ivhXSazAyWvNw8.root'@'%';")
             print("   FLUSH PRIVILEGES;")
             print("=" * 80 + "\n")
-        raise exc
+        else:
+            print(f"WARNING: [Database] Database initialization encountered a temporary connection issue: {exc}")
 

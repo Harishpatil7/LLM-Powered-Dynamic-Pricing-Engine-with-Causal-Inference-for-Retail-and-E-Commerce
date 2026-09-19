@@ -38,7 +38,11 @@ class NormalizePathMiddleware:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    init_database()
+    import asyncio
+
+    # Initialize database asynchronously in a background thread so uvicorn
+    # binds to 0.0.0.0:$PORT immediately without triggering Render port-scan timeouts.
+    asyncio.create_task(asyncio.to_thread(init_database))
     yield
 
 
@@ -84,3 +88,12 @@ def health_check() -> dict[str, str]:
     """Small dependency-free endpoint used to verify API/frontend connectivity."""
 
     return {"status": "ok", "environment": settings.environment}
+
+
+if __name__ == "__main__":
+    import os
+    import uvicorn
+
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=port)
+
